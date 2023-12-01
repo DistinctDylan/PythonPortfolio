@@ -1,0 +1,1670 @@
+from typing import Optional
+import discord
+from discord import app_commands
+from discord.ext import tasks
+from datetime import datetime
+from datetime import date
+from discord.utils import MISSING
+import pytz
+from trello import TrelloClient
+import random
+import os
+import asyncio
+import threading
+from concurrent.futures import ProcessPoolExecutor
+format = "%Y-%m-%d %H:%M:%S %Z%z"
+format2 = "%H:%M"
+format3 = "%Y-%m-%d"
+converted_tz = pytz.timezone('US/Eastern')
+converted_tz2 = pytz.timezone('Europe/London')
+global client
+global currentLOG
+currentLOG = False
+
+differentActivities = ["Getting called to the chief's office...", "Driving the bighorn dually :) ", "Watching", "Talking to scott :("]
+
+TEST_GUILD = discord.Object(0)
+
+client2 = TrelloClient(
+    api_key='0',
+    api_secret='0',
+    token='0',
+    token_secret='nil'
+)
+
+
+all_boards = client2.list_boards()
+neededboardindex = 0
+for v in all_boards:
+    if v.name == "PDP: Activity Database": #--// enter board name (Exact, and capital letters matter)
+        neededboardindex = all_boards.index(v)
+
+TrelloBoard = all_boards[neededboardindex]
+lists = TrelloBoard.list_lists()
+
+
+def findCard(cardname):
+
+    plrCard = None
+
+    for v in lists:
+        templistIndex = lists.index(v)
+        cards = lists[templistIndex].list_cards()
+        for v in cards:
+            num = v.name.find(cardname)
+            checkname = v.name[(num):]
+            if checkname == cardname:
+                rank = v.name[:num]
+                plrCard = v
+                break
+    return plrCard , rank
+
+def UploadLog(name,supervisor, ID):
+    global currentLOG
+    while currentLOG == True:
+        pass
+    currentLOG = True
+
+    print("ran upload log")
+    TEXT = None
+    path = (f'{str(ID)}.txt')
+    if os.path.exists(path):
+        print(name)
+        card,rank = findCard(name)
+        AddTime = 0
+
+        with open(str(ID) + ".txt", "r+") as MainFile:
+            with open("placeholder.txt", "w") as SecondFile:
+                Lines = MainFile.readlines()
+                Lines[-1] = f"SUPERVISOR SIGNATURE: {supervisor}"
+                TTLine = Lines[-11]
+                AddTime = TTLine[12:]
+                cardDesc = card.description
+                for v in cardDesc:
+                    try:
+                        SecondFile.write(str(v))
+                        SecondFile.flush()
+                    except:
+                        print("couldnt write")
+                SecondFile.close()
+                with open("placeholder.txt", "r") as SecondFile:
+                    Lines2 = SecondFile.readlines()
+                    TTQuota = Lines2[-3]
+                    TTNum = TTQuota[16:-8:]
+                    TTNum = int(TTNum) + int(AddTime)
+
+                    QuotaLogLine = Lines2[-4]
+                    QuotaLog = int(QuotaLogLine[16::]) + 1
+
+                    TotalLogs = Lines2[-5]
+                    TotalLog = int(TotalLogs[16:-8:]) + int(AddTime)
+
+                    TotalLTL = Lines2[-6]
+                    TotalLT = int(TotalLTL[15::]) + 1
+
+                    Lines2[-3] = f"**Quota Time:** {TTNum} minutes\n"
+                    Lines2[-4] = f"**Quota Logs:** {QuotaLog}\n"
+                    Lines2[-5] = f"**Total Time:** {TotalLog} minutes\n"
+                    Lines2[-6] = f"**Total Logs:** {TotalLT}\n"
+
+                    TEXT = Lines2
+
+                    SecondFile.close()
+                    with open("placeholder.txt", "w") as ThirdFile:
+                        for v in TEXT:
+                            ThirdFile.write(v)
+                            ThirdFile.flush()
+                        ThirdFile.close()
+                    with open("placeholder.txt", "r") as LastFile:
+                        card.set_description("")
+                        card.set_description(LastFile.read())
+                        LastFile.close()
+            MainFile.close()
+
+            with open(str(ID) + ".txt", "w") as norm:
+                for v in Lines:
+                    norm.write(v)
+                    norm.flush()
+                norm.close
+            with open(str(ID) + ".txt", "r") as norm2:
+                text = norm2.read()
+                card.comment(text)
+                norm2.close()
+        os.remove(str(ID) + ".txt")
+        os.remove("placeholder.txt")
+        print("Successfully updated trello")
+        currentLOG = False
+def UploadOT(Name, reason, date):
+    card,rank = findCard(Name)
+    with open("temporaryOT.txt", "w+") as file:
+        for v in card.description:
+            try:
+                file.write(v)
+            except:
+                pass
+        file.close()
+    with open("temporaryOT.txt", "r+") as file:
+        lines = file.readlines()
+        lines.insert(len(lines) - 9, f"- {date} - {reason}")
+        lines.insert(len(lines) - 9, "\n")
+        file.close()
+    with open("temporaryOT.txt", "w+") as file:
+        for v in lines:
+            file.write(v)
+        file.close()
+    with open("temporaryOT.txt", "r") as file:
+        card.set_description("")
+        card.set_description(file.read())
+        file.close
+    os.remove("temporaryOT.txt")
+
+async def QuotaCheckup():
+
+    print("ran here bozo")
+    ChannelId = 0
+    channel = client.get_channel(ChannelId)
+    Void = ["information", "patrol squad 3", "callsign list"]
+    ListsAll = TrelloBoard.list_lists()
+    for v in ListsAll:
+        if v.name.lower() not in Void:
+            Emb = discord.Embed(title=v.name,color=discord.Color.from_rgb(242,212,17))
+            for Card in v.list_cards():
+                Chief = Card.name.find("Police")
+                Lt = Card.name.find("Lieutenant")
+                Sgt = Card.name.find("Sergeant")
+                Cpl = Card.name.find("Corporal")
+                Offc = Card.name.find("Officer")
+                rec = Card.name.find("Recruit")
+                if Card.name.find("Police") >= 0:
+                    name = Card.name[Chief + 7:]
+                    with open("Temporary.txt", "w") as file:
+                        for v in Card.description:
+                            try:
+                                file.write(str(v))
+                                file.flush()
+                            except:
+                                pass
+                        file.close()
+                    with open("Temporary.txt", "r") as file:
+                        Read = file.readlines()
+                        QuotaTime = Read[-3]
+                        time = QuotaTime[16:-8:]
+                        Emb.add_field(name=f"{name}: {str(time)} minutes",value="", inline=False)
+                        file.close()
+                    with open("Temporary.txt", "r+") as file:
+                        readnew = file.readlines()
+                        readnew[-3] = "**Quota Time:** 0 minutes\n"
+                        readnew[-4] = "**Quota Logs:** 0\n"
+                        file.close()
+                    with open("Temporary.txt", "w+") as file:
+                        for v in readnew:
+                            file.write(v)
+                        file.close()
+                    with open("Temporary.txt", "r") as file:
+                        Card.set_description("")
+                        Card.set_description(file.read())
+
+
+                if Card.name.find("Lieutenant") >= 0:
+                    name = Card.name[Lt + 10:]
+                    with open("Temporary.txt", "w") as file:
+                        for v in Card.description:
+                            try:
+                                file.write(str(v))
+                                file.flush()
+                            except:
+                                pass
+                        file.close()
+                    with open("Temporary.txt", "r") as file:
+                        Read = file.readlines()
+                        QuotaTime = Read[-3]
+                        time = QuotaTime[16:-8:]
+                        Emb.add_field(name=f"{name}: {str(time)} minutes",value="", inline=False)
+                        file.close()
+                    with open("Temporary.txt", "r+") as file:
+                        readnew = file.readlines()
+                        readnew[-3] = "**Quota Time:** 0 minutes\n"
+                        readnew[-4] = "**Quota Logs:** 0\n"
+                        file.close()
+                    with open("Temporary.txt", "w+") as file:
+                        for v in readnew:
+                            file.write(v)
+                        file.close()
+                    with open("Temporary.txt", "r") as file:
+                        Card.set_description("")
+                        Card.set_description(file.read())
+                if Card.name.find("Sergeant") >= 0:
+                    name = Card.name[Sgt + 8:]
+                    with open("Temporary.txt", "w") as file:
+                        for v in Card.description:
+                            try:
+                                file.write(str(v))
+                                file.flush()
+                            except:
+                                pass
+                        file.close()
+                    with open("Temporary.txt", "r") as file:
+                        Read = file.readlines()
+                        QuotaTime = Read[-3]
+                        time = QuotaTime[16:-8:]
+                        Emb.add_field(name=f"{name}: {str(time)} minutes",value="", inline=False)
+                        file.close()
+                    with open("Temporary.txt", "r+") as file:
+                        readnew = file.readlines()
+                        readnew[-3] = "**Quota Time:** 0 minutes\n"
+                        readnew[-4] = "**Quota Logs:** 0\n"
+                        file.close()
+                    with open("Temporary.txt", "w+") as file:
+                        for v in readnew:
+                            file.write(v)
+                        file.close()
+                    with open("Temporary.txt", "r") as file:
+                        Card.set_description("")
+                        Card.set_description(file.read())
+                if Card.name.find("Corporal") >= 0:
+                    name = Card.name[Cpl + 8:]
+                    with open("Temporary.txt", "w") as file:
+                        for v in Card.description:
+                            try:
+                                file.write(str(v))
+                                file.flush()
+                            except:
+                                pass
+                        file.close()
+                    with open("Temporary.txt", "r") as file:
+                        Read = file.readlines()
+                        QuotaTime = Read[-3]
+                        time = QuotaTime[16:-8:]
+                        Emb.add_field(name=f"{name}: {str(time)} minutes",value="", inline=False)
+                        file.close()
+                    with open("Temporary.txt", "r+") as file:
+                        readnew = file.readlines()
+                        readnew[-3] = "**Quota Time:** 0 minutes\n"
+                        readnew[-4] = "**Quota Logs:** 0\n"
+                        file.close()
+                    with open("Temporary.txt", "w+") as file:
+                        for v in readnew:
+                            file.write(v)
+                        file.close()
+                    with open("Temporary.txt", "r") as file:
+                        Card.set_description("")
+                        Card.set_description(file.read())
+                if Card.name.find("Officer") >= 0:             
+                    name = Card.name[Offc + 7:]
+                    with open("Temporary.txt", "w") as file:
+                        for v in Card.description:
+                            try:
+                                file.write(str(v))
+                                file.flush()
+                            except:
+                                pass
+                        file.close()
+                    with open("Temporary.txt", "r") as file:
+                        Read = file.readlines()
+                        QuotaTime = Read[-3]
+                        time = QuotaTime[16:-8:]
+                        Emb.add_field(name=f"{name}: {str(time)} minutes",value="", inline=False)
+                        file.close()
+                    with open("Temporary.txt", "r+") as file:
+                        readnew = file.readlines()
+                        readnew[-3] = "**Quota Time:** 0 minutes\n"
+                        readnew[-4] = "**Quota Logs:** 0\n"
+                        file.close()
+                    with open("Temporary.txt", "w+") as file:
+                        for v in readnew:
+                            file.write(v)
+                        file.close()
+                        
+                    with open("Temporary.txt", "r") as file:
+                        Card.set_description("")
+                        Card.set_description(file.read())
+
+                if Card.name.find("Recruit") >= 0:             
+                    name = Card.name[rec + 7:]
+                    with open("Temporary.txt", "w") as file:
+                        for v in Card.description:
+                            try:
+                                file.write(str(v))
+                                file.flush()
+                            except:
+                                pass
+                        file.close()
+                    with open("Temporary.txt", "r") as file:
+                        Read = file.readlines()
+                        QuotaTime = Read[-3]
+                        time = QuotaTime[16:-8:]
+                        Emb.add_field(name=f"{name}: {str(time)} minutes",value="", inline=False)
+                        file.close()
+                    with open("Temporary.txt", "r+") as file:
+                        readnew = file.readlines()
+                        readnew[-3] = "**Quota Time:** 0 minutes\n"
+                        readnew[-4] = "**Quota Logs:** 0\n"
+                        file.close()
+                    with open("Temporary.txt", "w+") as file:
+                        for v in readnew:
+                            file.write(v)
+                        file.close()
+                    with open("Temporary.txt", "r") as file:
+                        Card.set_description("")
+                        Card.set_description(file.read())
+                
+            await channel.send(embed=Emb)
+
+
+    await channel.send("@everyone")
+    os.remove("Temporary.txt")
+
+def Leaderboard(type):
+    List = []
+    if type == "Global Weekly":
+        Void = ["information", "patrol squad 3", "callsign list"]
+        ListsAll = TrelloBoard.list_lists()
+        for v in ListsAll:
+            if v.name.lower() not in Void:
+                embed = ""
+                for Card in v.list_cards():
+                    Chief = Card.name.find("Police")
+                    Lt = Card.name.find("Lieutenant")
+                    Sgt = Card.name.find("Sergeant")
+                    Cpl = Card.name.find("Corporal")
+                    Offc = Card.name.find("Officer")
+                    rec = Card.name.find("Recruit")
+                    if Card.name.find("Police") >= 0:
+                        name = Card.name[Chief + 7:]
+                        with open("Temporary2.txt", "w") as file:
+                            for v in Card.description:
+                                try:
+                                    file.write(str(v))
+                                    file.flush()
+                                except:
+                                    pass
+                            file.close()
+                        with open("Temporary2.txt", "r") as file:
+                            Read = file.readlines()
+                            QuotaTime = Read[-3]
+                            mins = QuotaTime[16:-8:]
+                            try:
+                                appendthis = (name, int(mins))
+                                List.append(appendthis)
+                            except:
+                                pass
+                            file.close()
+                    if Card.name.find("Lieutenant") >= 0:
+                        name = Card.name[Lt + 10:]
+                        with open("Temporary2.txt", "w") as file:
+                            for v in Card.description:
+                                try:
+                                    file.write(str(v))
+                                    file.flush()
+                                except:
+                                    pass
+                            file.close()
+                        with open("Temporary2.txt", "r") as file:
+                            Read = file.readlines()
+                            QuotaTime = Read[-3]
+                            mins = QuotaTime[16:-8:]
+                            try:
+                                appendthis = (name, int(mins))
+                                List.append(appendthis)
+                            except:
+                                pass
+                            file.close()
+                    if Card.name.find("Sergeant") >= 0:
+                        name = Card.name[Sgt + 8:]
+                        with open("Temporary2.txt", "w") as file:
+                            for v in Card.description:
+                                try:
+                                    file.write(str(v))
+                                    file.flush()
+                                except:
+                                    pass
+                            file.close()
+                        with open("Temporary2.txt", "r") as file:
+                            Read = file.readlines()
+                            QuotaTime = Read[-3]
+                            mins = QuotaTime[16:-8:]
+                            try:
+                                appendthis = (name, int(mins))
+                                List.append(appendthis)
+                            except:
+                                pass
+                            file.close()
+                    if Card.name.find("Corporal") >= 0:
+                        name = Card.name[Cpl + 8:]
+                        with open("Temporary2.txt", "w") as file:
+                            for v in Card.description:
+                                try:
+                                    file.write(str(v))
+                                    file.flush()
+                                except:
+                                    pass
+                            file.close()
+                        with open("Temporary2.txt", "r") as file:
+                            Read = file.readlines()
+                            QuotaTime = Read[-3]
+                            mins = QuotaTime[16:-8:]
+                            try:
+                                appendthis = (name, int(mins))
+                                List.append(appendthis)
+                            except:
+                                pass
+                            file.close()
+                    if Card.name.find("Officer") >= 0:
+                        name = Card.name[Offc + 7:]
+                        with open("Temporary2.txt", "w") as file:
+                            for v in Card.description:
+                                try:
+                                    file.write(str(v))
+                                    file.flush()
+                                except:
+                                    pass
+                            file.close()
+                        with open("Temporary2.txt", "r") as file:
+                            Read = file.readlines()
+                            QuotaTime = Read[-3]
+                            mins = QuotaTime[16:-8:]
+                            try:
+                                appendthis = (name, int(mins))
+                                List.append(appendthis)
+                            except:
+                                pass
+                            file.close()
+                    if Card.name.find("Recruit") >= 0:
+                        name = Card.name[rec + 7:]
+                        with open("Temporary2.txt", "w") as file:
+                            for v in Card.description:
+                                try:
+                                    file.write(str(v))
+                                    file.flush()
+                                except:
+                                    pass
+                            file.close()
+                        with open("Temporary2.txt", "r") as file:
+                            Read = file.readlines()
+                            QuotaTime = Read[-3]
+                            mins = QuotaTime[16:-8:]
+                            try:
+                                appendthis = (name, int(mins))
+                                List.append(appendthis)
+                            except:
+                                pass
+                            file.close()
+            print("done")
+
+    if type == "All-time Global":
+        Void = ["information", "patrol squad 3", "callsign list"]
+        ListsAll = TrelloBoard.list_lists()
+        for v in ListsAll:
+            if v.name.lower() not in Void:
+                embed = ""
+                for Card in v.list_cards():
+                    Chief = Card.name.find("Police")
+                    Lt = Card.name.find("Lieutenant")
+                    Sgt = Card.name.find("Sergeant")
+                    Cpl = Card.name.find("Corporal")
+                    Offc = Card.name.find("Officer")
+                    rec = Card.name.find("Recruit")
+                    if Card.name.find("Police") >= 0:
+                        name = Card.name[Chief + 7:]
+                        with open("Temporary2.txt", "w") as file:
+                            for v in Card.description:
+                                try:
+                                    file.write(str(v))
+                                    file.flush()
+                                except:
+                                    pass
+                            file.close()
+                        with open("Temporary2.txt", "r") as file:
+                            Read = file.readlines()
+                            QuotaTime = Read[-5]
+                            mins = QuotaTime[16:-8:]
+                            try:
+                                appendthis = (name, int(mins))
+                                List.append(appendthis)
+                            except:
+                                pass
+                            file.close()
+                    if Card.name.find("Lieutenant") >= 0:
+                        name = Card.name[Lt + 10:]
+                        with open("Temporary2.txt", "w") as file:
+                            for v in Card.description:
+                                try:
+                                    file.write(str(v))
+                                    file.flush()
+                                except:
+                                    pass
+                            file.close()
+                        with open("Temporary2.txt", "r") as file:
+                            Read = file.readlines()
+                            QuotaTime = Read[-5]
+                            mins = QuotaTime[16:-8:]
+                            try:
+                                appendthis = (name, int(mins))
+                                List.append(appendthis)
+                            except:
+                                pass
+                            file.close()
+                    if Card.name.find("Sergeant") >= 0:
+                        name = Card.name[Sgt + 8:]
+                        with open("Temporary2.txt", "w") as file:
+                            for v in Card.description:
+                                try:
+                                    file.write(str(v))
+                                    file.flush()
+                                except:
+                                    pass
+                            file.close()
+                        with open("Temporary2.txt", "r") as file:
+                            Read = file.readlines()
+                            QuotaTime = Read[-5]
+                            mins = QuotaTime[16:-8:]
+                            try:
+                                appendthis = (name, int(mins))
+                                List.append(appendthis)
+                            except:
+                                pass
+                            file.close()
+                    if Card.name.find("Corporal") >= 0:
+                        name = Card.name[Cpl + 8:]
+                        with open("Temporary2.txt", "w") as file:
+                            for v in Card.description:
+                                try:
+                                    file.write(str(v))
+                                    file.flush()
+                                except:
+                                    pass
+                            file.close()
+                        with open("Temporary2.txt", "r") as file:
+                            Read = file.readlines()
+                            QuotaTime = Read[-5]
+                            mins = QuotaTime[16:-8:]
+                            try:
+                                appendthis = (name, int(mins))
+                                List.append(appendthis)
+                            except:
+                                pass
+                            file.close()
+                    if Card.name.find("Officer") >= 0:
+                        name = Card.name[Offc + 7:]
+                        with open("Temporary2.txt", "w") as file:
+                            for v in Card.description:
+                                try:
+                                    file.write(str(v))
+                                    file.flush()
+                                except:
+                                    pass
+                            file.close()
+                        with open("Temporary2.txt", "r") as file:
+                            Read = file.readlines()
+                            QuotaTime = Read[-5]
+                            mins = QuotaTime[16:-8:]
+                            try:
+                                appendthis = (name, int(mins))
+                                List.append(appendthis)
+                            except:
+                                pass
+                            file.close()
+                    if Card.name.find("Recruit") >= 0:
+                        name = Card.name[rec + 7:]
+                        with open("Temporary2.txt", "w") as file:
+                            for v in Card.description:
+                                try:
+                                    file.write(str(v))
+                                    file.flush()
+                                except:
+                                    pass
+                            file.close()
+                        with open("Temporary2.txt", "r") as file:
+                            Read = file.readlines()
+                            QuotaTime = Read[-5]
+                            mins = QuotaTime[16:-8:]
+                            try:
+                                appendthis = (name, int(mins))
+                                List.append(appendthis)
+                            except:
+                                pass
+                            file.close()
+            print("done") 
+    
+    if type == "Squad 1 Weekly":
+        ListsAll = TrelloBoard.list_lists()
+        for v in ListsAll:
+            if v.name.lower() == "patrol squad 1":
+                embed = ""
+                for Card in v.list_cards():
+                    Chief = Card.name.find("Police")
+                    Lt = Card.name.find("Lieutenant")
+                    Sgt = Card.name.find("Sergeant")
+                    Cpl = Card.name.find("Corporal")
+                    Offc = Card.name.find("Officer")
+                    rec = Card.name.find("Recruit")
+                    if Card.name.find("Police") >= 0:
+                        name = Card.name[Chief + 7:]
+                        with open("Temporary2.txt", "w") as file:
+                            for v in Card.description:
+                                try:
+                                    file.write(str(v))
+                                    file.flush()
+                                except:
+                                    pass
+                            file.close()
+                        with open("Temporary2.txt", "r") as file:
+                            Read = file.readlines()
+                            QuotaTime = Read[-5]
+                            mins = QuotaTime[16:-8:]
+                            try:
+                                appendthis = (name, int(mins))
+                                List.append(appendthis)
+                            except:
+                                pass
+                            file.close()
+                    if Card.name.find("Lieutenant") >= 0:
+                        name = Card.name[Lt + 10:]
+                        with open("Temporary2.txt", "w") as file:
+                            for v in Card.description:
+                                try:
+                                    file.write(str(v))
+                                    file.flush()
+                                except:
+                                    pass
+                            file.close()
+                        with open("Temporary2.txt", "r") as file:
+                            Read = file.readlines()
+                            QuotaTime = Read[-5]
+                            mins = QuotaTime[16:-8:]
+                            try:
+                                appendthis = (name, int(mins))
+                                List.append(appendthis)
+                            except:
+                                pass
+                            file.close()
+                    if Card.name.find("Sergeant") >= 0:
+                        name = Card.name[Sgt + 8:]
+                        with open("Temporary2.txt", "w") as file:
+                            for v in Card.description:
+                                try:
+                                    file.write(str(v))
+                                    file.flush()
+                                except:
+                                    pass
+                            file.close()
+                        with open("Temporary2.txt", "r") as file:
+                            Read = file.readlines()
+                            QuotaTime = Read[-5]
+                            mins = QuotaTime[16:-8:]
+                            try:
+                                appendthis = (name, int(mins))
+                                List.append(appendthis)
+                            except:
+                                pass
+                            file.close()
+                    if Card.name.find("Corporal") >= 0:
+                        name = Card.name[Cpl + 8:]
+                        with open("Temporary2.txt", "w") as file:
+                            for v in Card.description:
+                                try:
+                                    file.write(str(v))
+                                    file.flush()
+                                except:
+                                    pass
+                            file.close()
+                        with open("Temporary2.txt", "r") as file:
+                            Read = file.readlines()
+                            QuotaTime = Read[-5]
+                            mins = QuotaTime[16:-8:]
+                            try:
+                                appendthis = (name, int(mins))
+                                List.append(appendthis)
+                            except:
+                                pass
+                            file.close()
+                    if Card.name.find("Officer") >= 0:
+                        name = Card.name[Offc + 7:]
+                        with open("Temporary2.txt", "w") as file:
+                            for v in Card.description:
+                                try:
+                                    file.write(str(v))
+                                    file.flush()
+                                except:
+                                    pass
+                            file.close()
+                        with open("Temporary2.txt", "r") as file:
+                            Read = file.readlines()
+                            QuotaTime = Read[-5]
+                            mins = QuotaTime[16:-8:]
+                            try:
+                                appendthis = (name, int(mins))
+                                List.append(appendthis)
+                            except:
+                                pass
+                            file.close()
+                    if Card.name.find("Recruit") >= 0:
+                        name = Card.name[rec + 7:]
+                        with open("Temporary2.txt", "w") as file:
+                            for v in Card.description:
+                                try:
+                                    file.write(str(v))
+                                    file.flush()
+                                except:
+                                    pass
+                            file.close()
+                        with open("Temporary2.txt", "r") as file:
+                            Read = file.readlines()
+                            QuotaTime = Read[-5]
+                            mins = QuotaTime[16:-8:]
+                            try:
+                                appendthis = (name, int(mins))
+                                List.append(appendthis)
+                            except:
+                                pass
+                            file.close()
+            print("done")
+    
+    if type == "Squad 2 Weekly":
+        ListsAll = TrelloBoard.list_lists()
+        for v in ListsAll:
+            if v.name.lower() == "patrol squad 2":
+                embed = ""
+                for Card in v.list_cards():
+                    Chief = Card.name.find("Police")
+                    Lt = Card.name.find("Lieutenant")
+                    Sgt = Card.name.find("Sergeant")
+                    Cpl = Card.name.find("Corporal")
+                    Offc = Card.name.find("Officer")
+                    rec = Card.name.find("Recruit")
+                    if Card.name.find("Police") >= 0:
+                        name = Card.name[Chief + 7:]
+                        with open("Temporary2.txt", "w") as file:
+                            for v in Card.description:
+                                try:
+                                    file.write(str(v))
+                                    file.flush()
+                                except:
+                                    pass
+                            file.close()
+                        with open("Temporary2.txt", "r") as file:
+                            Read = file.readlines()
+                            QuotaTime = Read[-5]
+                            mins = QuotaTime[16:-8:]
+                            try:
+                                appendthis = (name, int(mins))
+                                List.append(appendthis)
+                            except:
+                                pass
+                            file.close()
+                    if Card.name.find("Lieutenant") >= 0:
+                        name = Card.name[Lt + 10:]
+                        with open("Temporary2.txt", "w") as file:
+                            for v in Card.description:
+                                try:
+                                    file.write(str(v))
+                                    file.flush()
+                                except:
+                                    pass
+                            file.close()
+                        with open("Temporary2.txt", "r") as file:
+                            Read = file.readlines()
+                            QuotaTime = Read[-5]
+                            mins = QuotaTime[16:-8:]
+                            try:
+                                appendthis = (name, int(mins))
+                                List.append(appendthis)
+                            except:
+                                pass
+                            file.close()
+                    if Card.name.find("Sergeant") >= 0:
+                        name = Card.name[Sgt + 8:]
+                        with open("Temporary2.txt", "w") as file:
+                            for v in Card.description:
+                                try:
+                                    file.write(str(v))
+                                    file.flush()
+                                except:
+                                    pass
+                            file.close()
+                        with open("Temporary2.txt", "r") as file:
+                            Read = file.readlines()
+                            QuotaTime = Read[-5]
+                            mins = QuotaTime[16:-8:]
+                            try:
+                                appendthis = (name, int(mins))
+                                List.append(appendthis)
+                            except:
+                                pass
+                            file.close()
+                    if Card.name.find("Corporal") >= 0:
+                        name = Card.name[Cpl + 8:]
+                        with open("Temporary2.txt", "w") as file:
+                            for v in Card.description:
+                                try:
+                                    file.write(str(v))
+                                    file.flush()
+                                except:
+                                    pass
+                            file.close()
+                        with open("Temporary2.txt", "r") as file:
+                            Read = file.readlines()
+                            QuotaTime = Read[-5]
+                            mins = QuotaTime[16:-8:]
+                            try:
+                                appendthis = (name, int(mins))
+                                List.append(appendthis)
+                            except:
+                                pass
+                            file.close()
+                    if Card.name.find("Officer") >= 0:
+                        name = Card.name[Offc + 7:]
+                        with open("Temporary2.txt", "w") as file:
+                            for v in Card.description:
+                                try:
+                                    file.write(str(v))
+                                    file.flush()
+                                except:
+                                    pass
+                            file.close()
+                        with open("Temporary2.txt", "r") as file:
+                            Read = file.readlines()
+                            QuotaTime = Read[-5]
+                            mins = QuotaTime[16:-8:]
+                            try:
+                                appendthis = (name, int(mins))
+                                List.append(appendthis)
+                            except:
+                                pass
+                            file.close()
+                    if Card.name.find("Recruit") >= 0:
+                        name = Card.name[rec + 7:]
+                        with open("Temporary2.txt", "w") as file:
+                            for v in Card.description:
+                                try:
+                                    file.write(str(v))
+                                    file.flush()
+                                except:
+                                    pass
+                            file.close()
+                        with open("Temporary2.txt", "r") as file:
+                            Read = file.readlines()
+                            QuotaTime = Read[-5]
+                            mins = QuotaTime[16:-8:]
+                            try:
+                                appendthis = (name, int(mins))
+                                List.append(appendthis)
+                            except:
+                                pass
+                            file.close()
+            print("done")
+    
+    if type == "K9 Unit Weekly":
+        ListsAll = TrelloBoard.list_lists()
+        for v in ListsAll:
+            if v.name.lower() == "k9 unit":
+                embed = ""
+                for Card in v.list_cards():
+                    Chief = Card.name.find("Police")
+                    Lt = Card.name.find("Lieutenant")
+                    Sgt = Card.name.find("Sergeant")
+                    Cpl = Card.name.find("Corporal")
+                    Offc = Card.name.find("Officer")
+                    rec = Card.name.find("Recruit")
+                    if Card.name.find("Police") >= 0:
+                        name = Card.name[Chief + 7:]
+                        with open("Temporary2.txt", "w") as file:
+                            for v in Card.description:
+                                try:
+                                    file.write(str(v))
+                                    file.flush()
+                                except:
+                                    pass
+                            file.close()
+                        with open("Temporary2.txt", "r") as file:
+                            Read = file.readlines()
+                            QuotaTime = Read[-5]
+                            mins = QuotaTime[16:-8:]
+                            try:
+                                appendthis = (name, int(mins))
+                                List.append(appendthis)
+                            except:
+                                pass
+                            file.close()
+                    if Card.name.find("Lieutenant") >= 0:
+                        name = Card.name[Lt + 10:]
+                        with open("Temporary2.txt", "w") as file:
+                            for v in Card.description:
+                                try:
+                                    file.write(str(v))
+                                    file.flush()
+                                except:
+                                    pass
+                            file.close()
+                        with open("Temporary2.txt", "r") as file:
+                            Read = file.readlines()
+                            QuotaTime = Read[-5]
+                            mins = QuotaTime[16:-8:]
+                            try:
+                                appendthis = (name, int(mins))
+                                List.append(appendthis)
+                            except:
+                                pass
+                            file.close()
+                    if Card.name.find("Sergeant") >= 0:
+                        name = Card.name[Sgt + 8:]
+                        with open("Temporary2.txt", "w") as file:
+                            for v in Card.description:
+                                try:
+                                    file.write(str(v))
+                                    file.flush()
+                                except:
+                                    pass
+                            file.close()
+                        with open("Temporary2.txt", "r") as file:
+                            Read = file.readlines()
+                            QuotaTime = Read[-5]
+                            mins = QuotaTime[16:-8:]
+                            try:
+                                appendthis = (name, int(mins))
+                                List.append(appendthis)
+                            except:
+                                pass
+                            file.close()
+                    if Card.name.find("Corporal") >= 0:
+                        name = Card.name[Cpl + 8:]
+                        with open("Temporary2.txt", "w") as file:
+                            for v in Card.description:
+                                try:
+                                    file.write(str(v))
+                                    file.flush()
+                                except:
+                                    pass
+                            file.close()
+                        with open("Temporary2.txt", "r") as file:
+                            Read = file.readlines()
+                            QuotaTime = Read[-5]
+                            mins = QuotaTime[16:-8:]
+                            try:
+                                appendthis = (name, int(mins))
+                                List.append(appendthis)
+                            except:
+                                pass
+                            file.close()
+                    if Card.name.find("Officer") >= 0:
+                        name = Card.name[Offc + 7:]
+                        with open("Temporary2.txt", "w") as file:
+                            for v in Card.description:
+                                try:
+                                    file.write(str(v))
+                                    file.flush()
+                                except:
+                                    pass
+                            file.close()
+                        with open("Temporary2.txt", "r") as file:
+                            Read = file.readlines()
+                            QuotaTime = Read[-5]
+                            mins = QuotaTime[16:-8:]
+                            try:
+                                appendthis = (name, int(mins))
+                                List.append(appendthis)
+                            except:
+                                pass
+                            file.close()
+                    if Card.name.find("Recruit") >= 0:
+                        name = Card.name[rec + 7:]
+                        with open("Temporary2.txt", "w") as file:
+                            for v in Card.description:
+                                try:
+                                    file.write(str(v))
+                                    file.flush()
+                                except:
+                                    pass
+                            file.close()
+                        with open("Temporary2.txt", "r") as file:
+                            Read = file.readlines()
+                            QuotaTime = Read[-5]
+                            mins = QuotaTime[16:-8:]
+                            try:
+                                appendthis = (name, int(mins))
+                                List.append(appendthis)
+                            except:
+                                pass
+                            file.close()
+            print("done")
+
+
+    List.sort(key=lambda a: a[1], reverse=True)
+    embed = discord.Embed(title=f"{type} Leaderboard",color=discord.Color.from_rgb(242,212,17))
+    if len(List) >= 10:
+        for v in range(0,10):
+            print(List[v][0])
+            embed.add_field(name=f"{v+1}: {str(List[v][0])} - {str(List[v][1])} minutes",value="", inline=False)
+    else:
+        for v in range(0,len(List)):
+            print(List[v][0])
+            embed.add_field(name=f"{v+1}: {str(List[v][0])} - {str(List[v][1])} minutes",value="", inline=False)
+    return embed
+
+def UploadLOA(name, supervisor, ID, SD, ED):
+    path = (f'LOA_{str(ID)}.txt')
+    if os.path.exists(path):
+        card,rank = findCard(name)
+        with open("temporaryLOA.txt", "w") as file:
+            for v in card.description:
+                try:
+                    file.write(v)
+                except:
+                    pass
+            file.close()
+        with open("temporaryLOA.txt", "r+") as file:
+            lines = file.readlines()
+            rightindex = 0
+            for v in lines:
+                if v.find("Patrol Quota History") >= 1:
+                    print("found")
+                    rightindex = lines.index(v)
+            text = f"- Leave of Absence ({SD} - {ED}) \n"
+            lines.insert(rightindex + 1, text)
+            lines.insert(rightindex + 1, "\n")
+            file.close()
+        with open("temporaryLOA.txt", "w+") as file:
+            for v in lines:
+                file.write(v)
+            file.close()
+        with open("temporaryLOA.txt", "r") as file:
+            card.set_description("")
+            card.set_description(file.read())
+            file.close
+
+        with open(f"LOA_{str(ID)}.txt", "r+") as file:
+            MainLines = file.readlines()
+            MainLines[-1] = f"**SUPERVISOR SIGNATURE:** {supervisor}"
+            file.close()
+        with open(f"LOA_{str(ID)}.txt", "w") as file2:
+            for v in MainLines:
+                try:
+                    file2.write(v)
+                except:
+                    pass
+            file2.close()
+        
+        with open(f"LOA_{str(ID)}.txt", "r") as file:
+            card.comment(file.read())
+            file.close()
+            
+        yes = card.fetch_custom_fields()
+        print(yes)
+
+        try:
+            v = ED.value
+            v2 = v.split("/")
+            print(v2)
+            d = date(int(v2[2]),int(v2[0]),int(v2[1]))
+            card.set_due(d)
+            os.remove("temporaryLOA.txt")
+            os.remove(f"LOA_{str(ID)}.txt")
+        except:
+            print("failed to delete files")
+
+
+class MyClient(discord.Client):
+    def __init__(self) -> None:
+
+        intents = discord.Intents.default()
+        intents.members = True
+        super().__init__(intents=intents)
+
+
+        self.tree = app_commands.CommandTree(self)
+
+    async def on_ready(self):
+        print(f'Logged in as {self.user} (ID: {self.user.id})')
+        print('------')
+
+        @tasks.loop(seconds = 60) # repeat after every 100 seconds
+        async def myLoop():
+            textnext = differentActivities[random.randint(0,3)]
+            if textnext == "Watching":
+                guild = client.get_guild(0)
+                role = guild.get_role(0)
+                textnext = f"Watching {len(role.members)} Employees"
+
+            activity = discord.Game(name=textnext, type=1)
+            await client.change_presence(status=discord.Status.online, activity=activity)
+            #datetime_object = datetime.now(pytz.timezone)
+            datetime_object = datetime.now(converted_tz2)
+            time2 = datetime_object.strftime(format2)
+            today = date.today()
+            if today.weekday() == 0:
+                if str(time2) == "04:00":
+                    print("is 23:00")
+                    await QuotaCheckup()
+
+
+        myLoop.start()
+
+    async def setup_hook(self) -> None:
+
+        await self.tree.sync(guild=TEST_GUILD)
+
+
+class PatrolLog(discord.ui.Modal, title='Patrol Log'):
+
+    #discord.ui.Modal.wait(0.1)
+
+    StartTime = discord.ui.TextInput(
+        label='Start Time',
+        placeholder='Start time here...',
+    )
+
+    EndTime = discord.ui.TextInput(
+        label='End Time',
+        placeholder='End time here...',
+    )
+
+    TTime = discord.ui.TextInput(
+        label='Total Time',
+        placeholder='Total time here...',
+    )
+
+    SS1 = discord.ui.TextInput(
+        label="Start Screenshot",
+        placeholder="Screenshot link here..."
+    )
+
+    SS2 = discord.ui.TextInput(
+        label="End Screenshot",
+        placeholder="Screenshot link here..."
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        print("modal submitted")
+        submittername = interaction.user.nick
+        self.id_save = random.randint(0, 10000)
+        await interaction.response.send_message(f"Log uploaded, {submittername}.", ephemeral=True)
+
+        def SaveLog():
+            print("ran savelog")
+            found = submittername.find("|")
+            Pname = submittername[(found + 2):]
+            card,rank = findCard(Pname)
+            leng = len(Pname) * -1
+            callsign = submittername[:(leng - 1)]
+            datetime_object = datetime.now(converted_tz)
+            time2 = datetime_object.strftime(format)
+
+            towrite = [f"PROMINENCE DISTRICT POLICE DEPARTMENT: PATROL LOG __ NAME:\n",
+                       f"\n",
+                       f"{submittername}\n",
+                       f"\n",
+                       f"RANK: {rank}\n",
+                       f"\n",
+                       f"CALLSIGN: {callsign}\n",
+                       f"\n",
+                       f"DATE OF PATROL: {time2}\n",
+                       f"\n",
+                       f"START TIME: {self.StartTime}\n",
+                       f"\n",
+                       f"END TIME: {self.EndTime}\n",
+                       f"\n",
+                       f"TOTAL TIME: {self.TTime.value}\n",
+                       f"\n",
+                       f"SCREENSHOTS:\n",
+                       f"\n",
+                       f"Start Screenshot: {self.SS1} \n",
+                       f"\n",
+                       f"End Screenshot: {self.SS2}\n",
+                       f"\n",
+                       f"COMMENTS: N/A\n",
+                       f"\n",
+                       f"SUPERVISOR SIGNATURE: PDP Automation\n",
+                    ]
+            
+            with open(str(self.id_save) + ".txt", "w") as file:
+                for v in towrite:
+                    file.write(str(v))
+                    file.flush()
+                file.close()
+        
+
+        class MyView(discord.ui.View):
+            global here
+            def __init__(self, IDSAVE):
+                super().__init__(timeout=None)
+                self.id_save2 = IDSAVE
+
+            def embed():
+                embed = discord.Embed(title="Patrol log",color=discord.Color.from_rgb(242,212,17))
+                embed.add_field(name="Username:", value=submittername, inline=False)
+                embed.add_field(name="Start of log:", value=self.StartTime, inline=False)
+                embed.add_field(name="End of log:", value=self.EndTime, inline=False)
+                embed.add_field(name="Total Time:", value=self.TTime.value, inline=False)
+                embed.add_field(name="Start screenshot:", value=self.SS1, inline=False)
+                embed.add_field(name="End screenshot:", value=self.SS2, inline=False)
+                datetime_object = datetime.now(converted_tz )
+                embed.add_field(name="", value=datetime_object.strftime(format), inline=False)
+                return embed
+
+            @discord.ui.button(label="Accept",row = 0, style=discord.ButtonStyle.success)
+
+            async def Accept_Button(self1, interaction,button):
+                if not "Supervisor" in [y.name for y in interaction.user.roles]:
+                    await interaction.response.send_message(f"Only supervisors can accept logs, {interaction.user.mention}.",ephemeral=True)
+                    print(f"{submittername} -- tried accepting a log LOL")
+                else:
+                    await interaction.response.edit_message(view=None,embed=MyView.embed())
+                    await interaction.message.edit(content=f"Log Accepted by {interaction.user.mention}")
+                    await interaction.message.add_reaction("\U00002705")
+                    found = submittername.find("|")
+                    UploadThread = threading.Thread(target=UploadLog, args=(submittername[(found + 2):],interaction.user.nick,self.id_save))
+                    UploadThread.start()
+                    #UploadLog(submittername[(found + 2):],interaction.user.nick,self.id_save)
+                    print(self.id_save)
+
+            @discord.ui.button(label="Decline",row = 0, style=discord.ButtonStyle.danger)
+
+            async def Decline_Button(self1, interaction,button):
+                if "Supervisor" in [y.name for y in interaction.user.roles]:
+                    await interaction.response.edit_message(view=None,embed=MyView.embed())
+                    await interaction.message.edit(content=f"Log Declined")
+                    await interaction.message.add_reaction("❌")
+                    os.remove(str(self.id_save) + ".txt")
+                else:
+                    await interaction.response.send_message(f"Only supervisors can Decline logs, {interaction.user.mention}.",ephemeral=True)
+
+            @discord.ui.button(label="Cancel", row = 0, style=discord.ButtonStyle.secondary)
+            async def Cancel_Button(self1, interaction,button):
+                if interaction.user.nick == submittername:
+                    await interaction.message.delete()
+                    os.remove(str(self.id_save) + ".txt")
+                else:
+                    await interaction.response.send_message(f"Not your log to decline, {interaction.user.mention}...",ephemeral=True)
+
+
+
+        
+        await interaction.channel.send(view=MyView(self.id_save) , embed=MyView.embed())
+        #SaveThread = threading.Thread(target=SaveLog)
+        #await SaveThread.start()
+        SaveLog()
+        #await interaction.channel.send(embed=MyView.embed())
+
+
+
+class Overtime(discord.ui.Modal, title='Overtime'):
+
+    #discord.ui.Modal.wait(0.1)
+
+    Username = discord.ui.TextInput(
+        label='Repicents name',
+        placeholder='EXACT name here...',
+    )
+
+    Reason = discord.ui.TextInput(
+        label='Event name',
+        placeholder='Event name here...',
+    )
+
+    Date = discord.ui.TextInput(
+        label='Date of event',
+        placeholder='(MM/DD/YYYY) ...',
+    )
+
+
+    async def on_submit(self, interaction: discord.Interaction):
+        if "Supervisor" in [y.name for y in interaction.user.roles]:
+            await interaction.response.send_message(f"Overtime added for {self.Username}, {interaction.user.mention}.", ephemeral=True)
+            thread1 = threading.Thread(target=UploadOT, args=(self.Username.value, self.Reason.value, self.Date.value))
+            thread1.start()
+        else:
+            interaction.response.send_message(f"Imagine trying to add OT without being a supervisor for {self.Username}, {interaction.user.mention}...", ephemeral=True)
+        #UploadOT(self.Username.value, self.Reason.value, self.Date.value)
+
+class LOA(discord.ui.Modal, title='Leave of absence'):
+
+    #discord.ui.Modal.wait(0.1)
+
+    Reason = discord.ui.TextInput(
+        label='Reason',
+        placeholder='Reason here...',
+    )
+
+    SDate = discord.ui.TextInput(
+        label='Start date',
+        placeholder='MM/DD/YYYY...',
+    )
+
+    EDate = discord.ui.TextInput(
+        label='End date',
+        placeholder='MM/DD/YYYY...',
+    )
+
+
+    async def on_submit(self, interaction: discord.Interaction):
+        if len(self.EDate.value) == 10:
+            print("modal submitted")
+            submittername = interaction.user.nick
+            self.id_save = random.randint(0, 10000)
+            await interaction.response.send_message(f"Log uploaded, {submittername}.", ephemeral=True)
+            
+            def SaveLoa():
+                print("ran savelog")
+                found = submittername.find("|")
+                Pname = submittername[(found + 2):]
+                card,rank = findCard(Pname)
+                leng = len(Pname) * -1
+                callsign = submittername[:(leng - 1)]
+                datetime_object = datetime.now(converted_tz)
+                time2 = datetime_object.strftime(format)
+
+                towrite = [f"**PROMINENCE DISTRICT POLICE DEPARTMENT: LEAVE OF ABSENCE REQUEST**\n",
+                            f"\n"
+                            f"\n"
+                            f"**NAME:** {Pname}\n"
+                            f"\n"
+                            f"**RANK:** {rank}\n"
+                            f"\n"
+                            f"**CALLSIGN:** {callsign}\n"
+                            f"\n"
+                            f"**START DATE OF LOA:** {self.SDate}\n"
+                            f"\n"
+                            f"**END DATE OF LOA:** {self.EDate}\n"
+                            f"\n"
+                            f"**REASON FOR LOA:** {self.Reason}\n"
+                            f"\n"
+                            f"**SUPERVISOR SIGNATURE:**\n"
+                            ]
+                with open(f"LOA_{str(self.id_save)}" + ".txt", "w") as file:
+                    for v in towrite:
+                        file.write(str(v))
+                        file.flush()
+                    file.close()
+            
+
+            class MyLOA(discord.ui.View):
+
+                def __init__(self, IDSAVE):
+                    super().__init__(timeout=None)
+                    self.id_save2 = IDSAVE
+
+                def embed():
+                    embed = discord.Embed(title="Leave of Absence",color=discord.Color.from_rgb(242,212,17))
+                    embed.add_field(name="Username:", value=submittername, inline=False)
+                    embed.add_field(name="Start of LOA", value=self.SDate, inline=False)
+                    embed.add_field(name="End of LOA:", value=self.EDate, inline=False)
+                    embed.add_field(name="Reason:", value=self.Reason, inline=False)
+                    datetime_object = datetime.now(converted_tz )
+                    embed.add_field(name="", value=datetime_object.strftime(format), inline=False)
+                    return embed
+
+                @discord.ui.button(label="Accept",row = 0, style=discord.ButtonStyle.success)
+
+                async def Accept_Button(self1, interaction,button):
+                    if not "Supervisor" in [y.name for y in interaction.user.roles]:
+                        await interaction.response.send_message(f"Only supervisors can accept LOAs, {interaction.user.mention}.",ephemeral=True)
+                        print(f"{submittername} -- tried accepting an LOA LOL")
+                    else:
+                        await interaction.response.edit_message(view=None,embed=MyLOA.embed())
+                        await interaction.message.edit(content=f"LOA Accepted by {interaction.user.mention}")
+                        await interaction.channel.send("<@&1012386091933905036>") #-- <@&(RANK ID)>
+                        await interaction.message.add_reaction("\U00002705")
+                        found = submittername.find("|")
+                        UploadThread1 = threading.Thread(target=UploadLOA, args=(submittername[(found + 2):],interaction.user.nick,self.id_save, self.SDate, self.EDate))
+                        UploadThread1.start()
+
+                @discord.ui.button(label="Decline",row = 0, style=discord.ButtonStyle.danger)
+
+                async def Decline_Button(self1, interaction,button):
+                    if "Supervisor" in [y.name for y in interaction.user.roles]:
+                        await interaction.response.edit_message(view=None,embed=MyLOA.embed())
+                        await interaction.message.edit(content=f"LOA Declined by {interaction.user.mention}")
+                        await interaction.message.add_reaction("❌")
+                        os.remove(f"LOA_{str(self.id_save)}" + ".txt")
+                    else:
+                        print(interaction.user.nick, " tried decling a log that isnt theirs")
+                        await interaction.response.send_message(f"Imagine trying to decline a log {interaction.user.mention} smh",ephemeral=True)
+
+                @discord.ui.button(label="Cancel", row = 0, style=discord.ButtonStyle.secondary)
+                async def Cancel_Button(self1, interaction,button):
+                    if interaction.user.nick == submittername:
+                        await interaction.message.delete()
+                        os.remove(f"LOA_{str(self.id_save)}" + ".txt")
+                    else:
+                        print(interaction.user.nick, " tried canceling a log that isnt theirs")
+                        await interaction.response.send_message(f"Imagine trying to cancel a log that isnt yours {interaction.user.mention} smh",ephemeral=True)
+
+            await interaction.channel.send(view=MyLOA(self.id_save) , embed=MyLOA.embed())
+            SaveLoa()
+        else:
+            await interaction.response.send_message(f"Remember the correct format, MM/DD/YYYY, e.g, 11/17/2023. - {interaction.user.mention}", ephemeral=True)
+
+
+
+
+
+
+
+
+
+class ADMINLOG1(discord.ui.Modal, title='Administrative Log'):
+
+
+    def __init__(self, type):
+        super().__init__()
+        self.type = type
+        print(self.type, " yes")
+
+    Name = discord.ui.TextInput(
+        label='Repicents name',
+        placeholder='Name here...',
+    )
+
+    NewRank = discord.ui.TextInput(
+        label='New Rank',
+        placeholder='Rank name here...',
+    )
+
+
+    async def on_submit(self, interaction: discord.Interaction):
+        if "Supervisor" in [y.name for y in interaction.user.roles]:
+            channelid = 1178101617527103661
+            channel = client.get_channel(channelid)
+
+            def embed():
+                embed = None
+                if self.type == "Promoted":
+                    embed = discord.Embed(title="Promotion",color=discord.Color.from_rgb(9, 121, 105))
+                else:
+                    embed = discord.Embed(title="Demotion",color=discord.Color.from_rgb(170, 74, 68))
+                datetime_object = datetime.now(converted_tz)
+                embed.add_field(name=f"{self.Name}", value="")
+                embed.add_field(name=f"{self.type} to {self.NewRank} on {datetime_object.strftime(format3)}.",value="", inline=False)
+                embed.set_footer(text=client.user.name, icon_url=client.user.avatar.url)
+                return embed
+            
+            await channel.send(embed=embed())
+            await interaction.response.send_message(f"Uploaded Successfully", ephemeral=True)
+        else:
+            await interaction.response.send_message(f"nuh uh", ephemeral=True)
+
+
+class ADMINLOG2(discord.ui.Modal, title='Administrative Log'):
+
+
+    def __init__(self, type):
+        super().__init__()
+        self.type = type
+
+    Name = discord.ui.TextInput(
+        label='Repicents name',
+        placeholder='Name here...',
+    )
+
+    StartDate = discord.ui.TextInput(
+        label='Start Date',
+        placeholder='XX/XX/XXXX...',
+    )
+
+    EndDate = discord.ui.TextInput(
+        label='End Date',
+        placeholder='XX/XX/XXXX...',
+    )
+
+
+    async def on_submit(self, interaction: discord.Interaction):
+        if "Supervisor" in [y.name for y in interaction.user.roles]:
+            channelid = 1178101617527103661
+            channel = client.get_channel(channelid)
+
+            def embed():
+                embed = None
+                if self.type == "Administrative Leave":
+                    embed = discord.Embed(title="Administrative Leave",color=discord.Color.from_rgb(0, 0, 0))
+                    embed.add_field(name=f"{self.Name}",value="")
+                    embed.add_field(name=f"Set on {self.type} at {self.StartDate} till {self.EndDate}.",value="", inline=False)
+                elif self.type == "Probation":
+                    embed = discord.Embed(title="Probation",color=discord.Color.from_rgb(170, 74, 68))
+                    embed.add_field(name=f"{self.Name}",value="")
+                    embed.add_field(name=f"Set on {self.type} at {self.StartDate} till {self.EndDate}.",value="", inline=False)
+                else:
+                    embed = discord.Embed(title="Suspension",color=discord.Color.from_rgb(170, 74, 68))
+                    embed.add_field(name=f"{self.Name}",value="")
+                    embed.add_field(name=f"Has been Suspended at {self.StartDate} till {self.EndDate}.",value="", inline=False)
+
+                embed.set_footer(text=client.user.name, icon_url=client.user.avatar.url)
+                return embed
+            
+            await channel.send(embed=embed())
+            await interaction.response.send_message(f"Uploaded Successfully", ephemeral=True)
+        else:
+            await interaction.response.send_message(f"nuh uh", ephemeral=True)
+
+
+
+class ADMINLOG3(discord.ui.Modal, title='Administrative Log'):
+
+
+    def __init__(self, type):
+        super().__init__()
+        self.type = type
+
+    Name = discord.ui.TextInput(
+        label='Repicents name',
+        placeholder='Name here...',
+    )
+
+
+    async def on_submit(self, interaction: discord.Interaction):
+        if "Supervisor" in [y.name for y in interaction.user.roles]:
+            channelid = 1178101617527103661
+            channel = client.get_channel(channelid)
+
+            def embed():
+                embed = None
+                if self.type == "Terminated":
+                    embed = discord.Embed(title="Termination",color=discord.Color.from_rgb(170, 74, 68))
+                    datetime_object = datetime.now(converted_tz)
+                    embed.add_field(name=f"{self.Name}", value="")
+                    embed.add_field(name=f"{self.type} on {datetime_object.strftime(format3)}.",value="", inline=False)
+                elif self.type == "Written Reprimand":
+                    embed = discord.Embed(title="Written Reprimand",color=discord.Color.from_rgb(218, 194, 42))
+                    embed.add_field(name=f"{self.Name}",value="")
+                    datetime_object = datetime.now(converted_tz)
+                    embed.add_field(name=f"Has been given a {self.type} on {datetime_object.strftime(format3)}.",value="", inline=False)
+                else:
+                    embed = discord.Embed(title="Verbal Reprimand",color=discord.Color.from_rgb(218, 194, 42))
+                    embed.add_field(name=f"{self.Name}",value="")
+                    datetime_object = datetime.now(converted_tz)
+                    embed.add_field(name=f"Has been given a {self.type} on {datetime_object.strftime(format3)}.",value="", inline=False)
+
+                embed.set_footer(text=client.user.name, icon_url=client.user.avatar.url)
+                return embed
+            
+            await channel.send(embed=embed())
+            await interaction.response.send_message(f"Uploaded Successfully", ephemeral=True)
+        else:
+            await interaction.response.send_message(f"nuh uh", ephemeral=True)
+
+
+
+
+
+
+
+
+
+
+
+
+client = MyClient()
+
+@client.tree.command(guild=TEST_GUILD, description="Submit Patrol log")
+async def log(interaction: discord.Interaction):
+    await interaction.response.send_modal(PatrolLog())
+
+@client.tree.command(guild=TEST_GUILD, description="Add Overtime")
+async def overtime(interaction: discord.Interaction):
+    await interaction.response.send_modal(Overtime())
+
+@client.tree.command(guild=TEST_GUILD, description="Leaderboard")
+@app_commands.describe(option="This is a description of what the option means")
+@app_commands.choices(option=[
+        app_commands.Choice(name="Global Weekly", value="1"),
+        app_commands.Choice(name="All-time Global", value="2"),
+        app_commands.Choice(name="Squad 1 Weekly", value="3"),
+        app_commands.Choice(name="Squad 2 Weekly", value="4"),
+        app_commands.Choice(name="K9 Unit Weekly", value="5")
+    ])
+async def leaderboard(interaction: discord.Interaction, option: app_commands.Choice[str]):
+    print(option.name)
+    await interaction.response.send_message(embed=Leaderboard(option.name))
+
+@client.tree.command(guild=TEST_GUILD, description="Leave of absence request")
+async def loa(interaction: discord.Interaction):
+    await interaction.response.send_modal(LOA())
+
+
+@client.tree.command(guild=TEST_GUILD, description="Create a log of this channel")
+async def transcript(interaction: discord.Interaction):
+    if "High Command" in [y.name for y in interaction.user.roles]:
+        chan = client.get_channel(1179567529035825152)
+        filename = f"{interaction.channel.name}.txt"
+        with open(filename, "w") as file:
+            async for msg in interaction.channel.history(limit=None):
+                file.write(f"{msg.created_at} - {msg.author.display_name}: {msg.clean_content}\n")
+            file.close()
+        await chan.send(file=discord.File(filename))
+        os.remove(filename)
+        await interaction.response.send_message("Transcript created")
+    else:
+        await interaction.response.send_message(f"Stop trying to transcript {interaction.user.mention}")
+    
+
+@client.tree.command(guild=TEST_GUILD, description="Admin Log")
+@app_commands.describe(option="What type of administrative action are you logging?")
+@app_commands.choices(option=[
+        app_commands.Choice(name="Terminated", value="1"),
+        app_commands.Choice(name="Demoted", value="2"),
+        app_commands.Choice(name="Suspension", value="3"),
+        app_commands.Choice(name="Probation", value="4"),
+        app_commands.Choice(name="Administrative Leave", value="5"),
+        app_commands.Choice(name="Written Reprimand", value="6"),
+        app_commands.Choice(name="Promoted", value="7"),
+        app_commands.Choice(name="Verbal Reprimand", value="8")
+    ])
+async def adminlog(interaction: discord.Interaction, option: app_commands.Choice[str]):
+    if "Moderator" in [y.name for y in interaction.user.roles]:
+        if option.value in ["2", "7"]:
+            print("is promo or demotion")
+            await interaction.response.send_modal(ADMINLOG1(option.name))
+        elif option.value in ["5", "3", "4"]:
+            print("is admin leave, probation or suspension")
+            await interaction.response.send_modal(ADMINLOG2(option.name))
+        else:
+            print("is termination or written reprimand")
+            await interaction.response.send_modal(ADMINLOG3(option.name))
+    else:
+        await interaction.response.send_message(f"You do not have the moderator role {interaction.user.mention}", ephemeral = True)
+
+
+
+#token = open("token.txt", "r")
+#token2 = token.read()
+
+#client.run(token2)
